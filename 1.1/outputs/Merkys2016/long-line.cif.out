@@ -1,5 +1,6 @@
 PyCIFRW
 STAR
+ada-cif-parser ERROR
 ase
 cif2cif WARNING
 cif_linguist ERROR

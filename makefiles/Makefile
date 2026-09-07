@@ -18,6 +18,10 @@ TABLE_MD   = $(OUT_DIR)/table.md
 
 BENCHMARK_OUT = $(OUT_DIR)/benchmark.out
 
+PARSER ?=
+
+.PHONY: all table tables benchmark update-parser cleanAll distclean
+
 all: tables
 
 table tables: $(TABLE_HTML) $(TABLE_MD) $(TABLE_TEX)
@@ -30,6 +34,33 @@ ${OUT_DIR}/%.out: ${INP_DIR}/%
     do \
         echo $$(basename $${PARSER}) $$($${PARSER} $<) >> $@; \
     done
+
+# Refresh one parser in the checked-in results without rerunning every parser.
+update-parser:
+	@test -n "$(PARSER)" || { echo "set PARSER to a driver name" >&2; exit 1; }
+	@test -x "drivers/$(PARSER)" || { echo "unknown parser driver: $(PARSER)" >&2; exit 1; }
+	@set -e; \
+	for INPUT in $(TESTS); \
+	do \
+		OUTPUT="$(OUT_DIR)/$${INPUT#$(INP_DIR)/}.out"; \
+		TEMP_OUTPUT="$${OUTPUT}.tmp"; \
+		mkdir -p "$$(dirname "$${OUTPUT}")"; \
+		{ \
+			if test -f "$${OUTPUT}"; then \
+				awk -v parser="$(PARSER)" '$$1 != parser' "$${OUTPUT}"; \
+			fi; \
+			RESULT="$$(drivers/$(PARSER) "$${INPUT}")"; \
+			if test -n "$${RESULT}"; then \
+				printf '%s %s\n' "$(PARSER)" "$${RESULT}"; \
+			else \
+				printf '%s\n' "$(PARSER)"; \
+			fi; \
+		} | LC_ALL=C sort > "$${TEMP_OUTPUT}"; \
+		mv "$${TEMP_OUTPUT}" "$${OUTPUT}"; \
+	done
+	rm -f $(TABLE_HTML) $(TABLE_MD) $(TABLE_TEX) $(TABLE_TSV)
+	$(MAKE) --no-print-directory tables
+	@echo "$(PARSER): updated $(words $(TESTS)) cases in $(OUT_DIR)"
 
 $(BENCHMARK_OUT):
 	../scripts/benchmark > $@
@@ -48,6 +79,7 @@ ${TABLE_TEX}: ${OUTPUTS}
 			| sed 's/outputs\///; s/_/\\_/g; s/\.out$$/ \& /'; \
 			grep -P "^$$(basename $${OUTPUT} .out)\t" \
 				tests/$$(echo $${OUTPUT} | cut -d / -f 2)/descriptions.tsv \
+				2>/dev/null \
 			| cut -f 2 | sed 's/1//; s/0/\$$\\\\times\$$/' | xargs echo -n; \
 			perl -lpe 's/WARNING/\//g; s/ERROR/\$$\\times\$$/g;' $${OUTPUT} | \
 			perl -ne 'my @a = split /\s/; print " & ", $$a[1]'; \

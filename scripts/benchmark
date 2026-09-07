@@ -3,19 +3,33 @@
 TMP_DIR="${TMPDIR}"
 BASENAME="$(basename $0)"
 
-INPUT_DIR=/var/data/users/andrius/struct/cod/cif
+INPUT_DIR="${INPUT_DIR:-/var/data/users/andrius/struct/cod/cif}"
+REPEAT="${REPEAT:-1}"
+
+if ! [ -d "${INPUT_DIR}" ]
+then
+    echo "benchmark input directory does not exist: ${INPUT_DIR}" >&2
+    exit 1
+fi
+
+case "${REPEAT}" in
+    ''|*[!0-9]*|0)
+        echo "REPEAT must be a positive integer" >&2
+        exit 1
+        ;;
+esac
 
 test -z "${TMP_DIR}" && TMP_DIR="."
 TMP_FILE="${TMP_DIR}/tmp-${BASENAME}-$$"
 
-find ${INPUT_DIR} -name \*.cif > ${TMP_FILE}
+find "${INPUT_DIR}" -name \*.cif > "${TMP_FILE}"
 
-SVNREVISION=$(svnversion ${INPUT_DIR})
+SVNREVISION=$(svnversion "${INPUT_DIR}" 2>/dev/null || echo unknown)
 
-NFILES=$(cat ${TMP_FILE} | wc -l)
-SIZE=$(du -chs ${INPUT_DIR} | grep total | awk '{print $1}')
+NFILES=$(wc -l < "${TMP_FILE}")
+SIZE=$(du -chs "${INPUT_DIR}" | grep total | awk '{print $1}')
 
-NCPU=$(grep ^processor /proc/cpuinfo | wc -l)
+NCPU="${NCPU:-$(grep ^processor /proc/cpuinfo | wc -l)}"
 CPU_MODEL=$(grep '^model name' /proc/cpuinfo | head -n1 | cut -d ':' -f 2)
 MEMTOTAL=$(grep ^MemTotal /proc/meminfo | awk '{print $2}' | xargs -i expr {} / 1048576)
 
@@ -28,6 +42,8 @@ F77_VERSION=$(f77 -v 2>&1 | perl -lne 'print $1 if /Version (\S+)/')
 
 echo SVNREVISION ${SVNREVISION}
 echo NFILES ${NFILES}
+echo REPEAT ${REPEAT}
+echo NPARSES $((NFILES * REPEAT))
 echo SIZE ${SIZE}
 echo NCPU ${NCPU}
 echo CPU_MODEL ${CPU_MODEL}
@@ -38,11 +54,17 @@ echo PERL_VERSION ${PERL_VERSION}
 echo PYTHON_VERSION ${PYTHON_VERSION}
 echo F77_VERSION ${F77_VERSION}
 
-for PARSER in $(ls -1 drivers/* | grep -iv star | grep -iv pycifrw | grep -iv vcif2 | sort)
+if [ -z "${PARSERS:-}" ]
+then
+    PARSERS=$(ls -1 drivers/* | grep -iv star | grep -iv pycifrw | grep -iv vcif2 | sort)
+fi
+
+for PARSER in ${PARSERS}
 do
     TIME=$(
         (
-            time cat ${TMP_FILE} \
+            time awk -v repeat="${REPEAT}" \
+                        '{ for (i = 0; i < repeat; i++) print }' "${TMP_FILE}" \
                 | xargs --max-args 1 \
                         --max-procs ${NCPU} \
                         ${PARSER} >/dev/null 2>&1
@@ -55,4 +77,4 @@ do
     echo ${PARSER} ${TIME}
 done
 
-rm ${TMP_FILE}
+rm "${TMP_FILE}"

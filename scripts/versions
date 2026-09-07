@@ -11,6 +11,7 @@ version_from_deb() {
 }
 
 (
+    echo ada-cif-parser  ${ADA_CIF_PARSER_VERSION:-?}
     echo ase            $(version_from_deb python3-ase)
     echo cif2cif        $(cif2cif </dev/null 2>/dev/null | grep -oP 'version \S+' | cut -d ' ' -f 2)
     echo cif_linguist   $(version_from_deb cif-linguist)
