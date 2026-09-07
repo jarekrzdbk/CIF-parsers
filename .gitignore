@@ -1,3 +1,4 @@
 *.tar.gz
 *.sif
 downloads/*
+/results/

@@ -49,6 +49,27 @@ Tests are located at [1.1/tests/](1.1/tests/) and [2.0/tests/](2.0/tests/).
 Tables with the results are located in relative ``outputs/table.tex`` and ``outputs/table.html`` files.
 Versions are listed in [versions.tab](versions.tab).
 
+Comparing a local Ada parser
+----------------------------
+
+The ``compare-ada`` target evaluates a locally built
+[Ada CIF parser](https://github.com/jarekrzdbk/ada_cif_parser) on both test
+corpora and adds its classifications to the parser results recorded in this
+repository:
+
+```sh
+make compare-ada \
+    ADA_CIF_PARSER=/absolute/path/to/bin/cif_parse \
+    ADA_RESULTS_DIR=/absolute/path/to/results
+```
+
+This target does not use Apptainer and does not install or rerun the other
+parsers. Their columns come from the checked-in outputs and correspond to the
+versions in [versions.tab](versions.tab). The target uses the existing cases,
+driver result protocol, and table generators, but works in a temporary tree so
+the checked-in outputs remain unchanged. It creates CIF 1.1 and CIF 2.0 tables
+under ``ADA_RESULTS_DIR`` in Markdown, HTML, LaTeX, and TSV formats.
+
 Reporting and Contribution
 --------------------------
 

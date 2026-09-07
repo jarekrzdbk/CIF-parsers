@@ -1,7 +1,10 @@
 CONTAINER = ./container.sif
 VERSIONS  = versions.tab
 
-.PHONY: all build container test tests
+ADA_CIF_PARSER ?=
+ADA_RESULTS_DIR ?= $(CURDIR)/results/ada-cif-parser
+
+.PHONY: all build container test tests compare-ada
 
 all: tests $(VERSIONS)
 
@@ -16,6 +19,16 @@ $(CONTAINER): $(CONTAINER:%.sif=%.def)
 
 $(VERSIONS): $(CONTAINER)
 	LC_ALL=C $(CONTAINER) scripts/versions --no-debian-version > $@
+
+# Compare one locally built Ada parser with the checked-in reference results.
+# This deliberately does not require the all-parser Apptainer image.
+compare-ada:
+	@test -n "$(ADA_CIF_PARSER)" || { \
+		echo "set ADA_CIF_PARSER to the parser executable" >&2; \
+		exit 1; \
+	}
+	scripts/compare-reference \
+		drivers/ada-cif-parser "$(ADA_CIF_PARSER)" "$(ADA_RESULTS_DIR)"
 
 .PHONY: clean
 

@@ -1,0 +1,111 @@
+#!/bin/bash
+
+set -euo pipefail
+
+if test "$#" -ne 3; then
+    echo "usage: $0 DRIVER PARSER RESULTS_DIR" >&2
+    exit 2
+fi
+
+driver=$1
+parser=$2
+results_dir=$3
+script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd -P)
+repository_dir=$(CDPATH= cd -- "$script_dir/.." && pwd -P)
+
+if ! test -x "$driver"; then
+    echo "comparison driver is not executable at $driver" >&2
+    exit 1
+fi
+if ! test -x "$parser"; then
+    echo "parser is not executable at $parser" >&2
+    exit 1
+fi
+
+driver_dir=$(CDPATH= cd -- "$(dirname -- "$driver")" && pwd -P)
+driver="$driver_dir/$(basename -- "$driver")"
+driver_name=$(basename -- "$driver")
+parser_dir=$(CDPATH= cd -- "$(dirname -- "$parser")" && pwd -P)
+parser="$parser_dir/$(basename -- "$parser")"
+mkdir -p "$results_dir"
+results_dir=$(CDPATH= cd -- "$results_dir" && pwd -P)
+
+work_dir=$(mktemp -d "${TMPDIR:-/tmp}/cif-parsers-comparison.XXXXXX")
+cleanup()
+{
+    rm -rf -- "$work_dir"
+}
+trap cleanup EXIT
+
+git -C "$repository_dir" archive --format=tar HEAD \
+    | tar -xf - -C "$work_dir"
+cp "$driver" "$work_dir/drivers/$driver_name"
+ln -sfn "../../drivers/$driver_name" \
+    "$work_dir/1.1/drivers/$driver_name"
+ln -sfn "../../drivers/$driver_name" \
+    "$work_dir/2.0/drivers/$driver_name"
+
+for version in 1.1 2.0; do
+    echo "Running $driver_name on the CIF $version comparison corpus..."
+    test_dir="$work_dir/$version/tests"
+
+    while IFS= read -r -d '' input; do
+        relative_input=${input#"$test_dir/"}
+        output="$work_dir/$version/outputs/$relative_input.out"
+        temporary_output="$output.tmp.$$"
+        mkdir -p "$(dirname -- "$output")"
+
+        classification=$(ADA_CIF_PARSER="$parser" "$driver" "$input")
+        case $classification in
+            "" | WARNING | ERROR | --)
+                ;;
+            *)
+                echo "unexpected $driver_name result: $classification" >&2
+                exit 1
+                ;;
+        esac
+
+        {
+            if test -f "$output"; then
+                awk -v driver="$driver_name" '$1 != driver' "$output"
+            fi
+            printf '%s %s\n' "$driver_name" "$classification"
+        } | LC_ALL=C sort >"$temporary_output"
+        mv "$temporary_output" "$output"
+    done < <(
+        find "$test_dir/" \
+            -name .svn -prune -o \
+            -name '*.result.canon' -prune -o \
+            -name runtests -prune -o \
+            -name '*.tsv' -prune -o \
+            -name '*.md' -prune -o \
+            \( -type f -o -type l \) -print0
+    )
+
+    rm -f "$work_dir/$version/outputs/table.html" \
+        "$work_dir/$version/outputs/table.md" \
+        "$work_dir/$version/outputs/table.tex" \
+        "$work_dir/$version/outputs/table.tsv"
+
+    # The TeX recipe expects a descriptions file for every suite, although
+    # some checked-in suites do not provide one.
+    for output_suite in "$work_dir/$version/outputs/"*/; do
+        suite=${output_suite%/}
+        suite=${suite##*/}
+        if ! test -f "$test_dir/$suite/descriptions.tsv"; then
+            : >"$test_dir/$suite/descriptions.tsv"
+        fi
+    done
+    LC_ALL=C make --no-print-directory --silent \
+        -C "$work_dir/$version" tables
+
+    mkdir -p "$results_dir/$version"
+    for generated_output in "$work_dir/$version/outputs/"*; do
+        if test "${generated_output##*/}" != benchmark.out; then
+            cp -a "$generated_output" "$results_dir/$version/"
+        fi
+    done
+done
+
+cp "$work_dir/versions.tab" "$results_dir/versions.tab"
+echo "Comparison tables written to $results_dir/{1.1,2.0}/table.{md,html,tex,tsv}"

@@ -1,0 +1,39 @@
+#!/bin/bash
+
+# CIF-parsers driver protocol:
+#   no output = accepted, WARNING = accepted with diagnostics,
+#   ERROR = rejected, -- = timed out.
+
+set -u
+
+parser=${ADA_CIF_PARSER:-}
+timeout_seconds=${ADA_CIF_PARSER_TIMEOUT:-30}
+
+if test -z "$parser" || ! test -x "$parser"; then
+    echo "ada-cif-parser: ADA_CIF_PARSER must name an executable" >&2
+    echo ERROR
+    exit 0
+fi
+
+diagnostics=$(mktemp "${TMPDIR:-/tmp}/ada-cif-parser.XXXXXX") || exit 1
+trap 'rm -f -- "$diagnostics"' EXIT
+
+status=0
+timeout "$timeout_seconds" "$parser" "$@" \
+    >/dev/null 2>"$diagnostics" || status=$?
+
+case $status in
+    0)
+        if grep -q ': warning\[' "$diagnostics"; then
+            echo WARNING
+        fi
+        ;;
+    124)
+        echo --
+        ;;
+    *)
+        echo ERROR
+        ;;
+esac
+
+exit 0
